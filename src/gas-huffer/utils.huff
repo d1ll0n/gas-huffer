@@ -1,0 +1,59 @@
+/**
+ * @title BYTES_TO_PREFIX
+ * @dev Get the first byte from a word in calldata
+*/
+#define macro READ_PREFIX = takes(0) returns(0) {
+  // [cd_offset]
+  calldataload 0xf8 shr
+}
+
+/**
+ * @title STORE_BYTE
+ * @dev Stores the prefix as a word in memory and increments the calldata and memory pointers
+*/
+#define macro STORE_BYTE = takes(3) returns(2) {
+  // [prefix, cd_prefix_ptr, mem_ptr]
+  dup3 mstore           // [ cd_prefix_ptr, mem_ptr ]
+  0x01 add              // [ cd_next_ptr, mem_ptr ]
+  swap1 0x20 add swap1  // [cd_next_ptr, mem_ptr]
+}
+
+/**
+ * @title STORE_BYTE
+ * @dev Stores the next set of bytes as a word in memory and increments the calldata and memory pointers
+ * @notice This will not work for values over 32 bytes -- if those should be handled, calldatacopy should be used instead
+*/
+#define macro STORE_MEDIUM_BYTES = takes(2) returns(2) {
+  // [ num_prefix, cd_prefix_ptr, mem_ptr ]
+  0x80 swap1 sub              // [ num_length, cd_prefix_ptr, mem_ptr ]
+  swap1 0x01 add swap1        // [ num_length, cd_bytes_ptr, mem_ptr ]
+  dup2 calldataload           // [ num_word, num_length, cd_bytes_ptr, mem_ptr ]
+  dup2 0x08 mul 0x100 sub shr // [ (num_word >> 256-(num_length*8)), num_length, cd_bytes_ptr, mem_ptr ]
+  dup4 mstore                 // [ num_length, cd_bytes_ptr, mem_ptr ]
+  add                         // [ cd_next_ptr, mem_ptr ]
+  swap1 0x20 add swap1        // [ cd_next_ptr, mem_next_ptr ]
+}
+
+/**
+ * @title GET_PREFIX_AND_DO
+ * @dev Determines whether the next item in the payload is a small or medium string, then executes the corresponding macro.
+ * @notice This will not work for values over 32 bytes -- if those should be handled, calldatacopy should be used instead
+*/
+template <do_for_single_byte, do_for_medium_bytes, after_jumpdest>
+#define macro GET_PREFIX_AND_DO = takes(1) returns(2) {
+  // [ cd_ptr_prefix ]
+  dup1 READ_PREFIX()                    // [ item_prefix, cd_ptr_prefix ]
+  0x80 dup2 lt is_single_byte jumpi     // [ item_prefix, cd_ptr_prefix ]
+  <do_for_medium_bytes> <after_jumpdest> jump
+  is_single_byte: <do_for_single_byte>  // [ byte, cd_ptr_prefix, mem_ptr ]
+}
+
+/**
+ * @title STORE_NEXT_BYTES
+ * @dev Determines whether the next item in the payload is a small or medium string, then stores the string as a word in memory.
+ * @notice This will not work for values over 32 bytes -- if those should be handled, calldatacopy should be used instead
+*/
+template <jump_after>
+#define macro STORE_NEXT_BYTES = takes(1) returns(2) {
+  GET_PREFIX_AND_DO<STORE_BYTE, STORE_MEDIUM_BYTES, jump_after>()
+}

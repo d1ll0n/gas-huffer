@@ -1,0 +1,64 @@
+#include "./utils.huff"
+
+#define macro FIELD_IS_ONE_BYTE = takes(2) returns(1) {
+  // [ item_prefix, cd_prefix_ptr ]
+  pop 0x01 add // [ cd_ptr ]
+}
+
+#define macro FIELD_IS_MEDIUM_BYTES = takes(2) returns(1) {
+  // [ item_prefix, cd_prefix_ptr ]
+  0x80 swap1 sub  // [ item_length, cd_ptr ]
+  0x01 add add    // [ cd_ptr_prefix + 1 + item_length ]
+}
+
+/**
+ * @title SKIP_DYNAMIC_FIELD
+ * @dev Skips past a dynamic-length bytes field.
+ * @notice The 3 possible RLP types for a string are single_byte, bytes_length_1_to_55 and bytes_length_gt_55.
+ * @notice This macro is used for the difficulty field, which is currently ~2,073,282,377,995,063 on mainnet.
+ *  Unless the difficulty increases by a factor of ~5e86, it will always be the second RLP type.
+ *  So on mainnet we can get the length of the difficulty by simply subtracting 0x80 from the prefix.
+ *  However, for testing on chains with no difficulty, we can also check if it is the first type.
+*/
+template <fin_jumpdest>
+#define macro SKIP_DYNAMIC_FIELD = takes(2) returns(2) {
+  // [ cd_ptr_prefix, mem_ptr ]
+  GET_PREFIX_AND_DO<FIELD_IS_ONE_BYTE, FIELD_IS_MEDIUM_BYTES, fin_jumpdest>()
+}
+
+/**
+ * @title SKIP_CONSTANT_FIELDS
+ * @dev Increases the cd pointer to skip the remaining constant-sized items in the RLP list.
+  * @param cd_ptr - Calldata pointer to the prefix of the parent hash field, i.e. the first byte of the header payload.
+ * @notice The skipped fields are:
+    * ParentHash - 0xa0<parent> 33 bytes
+    * UncleHash - 0xa0<uncle> 33 bytes
+    * Coinbase - 0x94<address> 21 bytes
+    * Root - 0xa0<root> 33 bytes
+    * TxHash - 0xa0<root> 33 bytes
+    * ReceiptHash - 0xa0<root> 33 bytes
+    * Bloom - 0xb90100<bloom> 259 bytes
+  * Total = 445 bytes
+* @notice The parent hash will always be 32 bytes, so once we have skipped past the header's length bytes,
+ * the parent hash will always be bytes 1-33. 
+*/
+#define macro SKIP_CONSTANT_FIELDS = takes(1) returns(1) {
+  0x1bd add
+}
+
+/**
+ * @title SKIP_LENGTH_LENGTH
+ * @dev Skips the payload length of the RLP-encoded header.
+ * @notice The actual value of the length is useless to us, so we just skip past it.
+ * Since we're decoding a header, we know the payload will always be a large list;
+ * thus the prefix will be in the range [0xf8, 0xff], and the length of the length
+ * of the payload will be (prefix - 0xf7). 
+ * We're not reading the length, just skipping the bytes that contain it.
+ * So we subtract 0xf6 from the prefix and add the result to the cd_ptr to get the
+ * location after the length.
+*/
+#define macro SKIP_LENGTH_LENGTH = takes(2) returns(2) {
+  // [cd_ptr, mem_ptr]
+  0xf6 dup2 READ_PREFIX() sub  // [ list_length_length, cd_ptr, mem_ptr ]
+  add                          // [ cd_ptr, mem_ptr ]
+}

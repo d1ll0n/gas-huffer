@@ -1,0 +1,58 @@
+#include "./utils.huff"
+
+/**
+ * @title CHECK_PARENT_HASH
+ * @dev Compares the block's parent hash to the previous blockhash.
+ * @notice The parent hash will always be 32 bytes, so once we have skipped
+ * past the header's length bytes, the parent hash will always be bytes 1-33. 
+*/
+template <bad_hash_err>
+#define macro CHECK_PARENT_HASH = takes(3) returns(3) {
+  // [ cd_ptr, mem_ptr, prev_hash ]
+  dup1 0x01 add calldataload      // [ parentHash, cd_ptr, mem_ptr, prev_hash ]
+  swap1 swap3                     // [ prev_hash, parentHash, mem_ptr, cd_ptr ]
+  eq iszero <bad_hash_err> jumpi  // [ mem_ptr, cd_ptr ]
+  swap1                           // [ cd_ptr, mem_ptr ]
+}
+
+template <bad_hash_err>
+#define macro DECODE_HEADER = takes(6) returns(6) {
+  // [ cd_ptr, mem_ptr, prev_hash, item_hash, index, array_length, array_length_offset ]
+  SKIP_LENGTH_LENGTH()                                  // [ cd_ptr, mem_ptr, prev_hash, item_hash, index, array_length, array_length_offset ]
+  CHECK_PARENT_HASH<bad_hash_err>()                     // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  SKIP_CONSTANT_FIELDS()                                // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  SKIP_DYNAMIC_FIELD<after_skip>() after_skip:          // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  STORE_NEXT_BYTES<after_get_num>() after_get_num:      // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  STORE_NEXT_BYTES<after_get_limit>() after_get_limit:  // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  STORE_NEXT_BYTES<after_get_used>() after_get_used:    // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+}
+
+/**
+
+/*
+ABI ENCODING
+array head calldata positions:
+  [0-32] - length_offset (usually 32)
+  [32-64] - length
+  [64:] - array_body
+
+o(index) = length_offset + 32 * index
+where index starts at 1
+the value at o(index) is the offset to the head of the item
+then for each item,
+[0-32] = length
+[32:length+32] = bytes
+*/
+#define macro GET_NEXT_HEADER_META = takes(5) returns(6) {
+  // [ mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  dup5                        // [ array_length_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  dup4 0x20 mul               // [ index * 32, array_length_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  dup2 add                    // [ item_offset_position, array_length_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  calldataload                // [ item_offset, array_length_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  add 0x20 add                // [ item_length_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  dup1 calldataload           // [ item_length, item_length_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  swap1 0x20 add swap1        // [ item_length, item_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  dup6 0x60 mul 0x40 add      // [ end_return_buffer, item_length, item_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  dup2 dup4 dup3 calldatacopy // [ end_return_buffer, item_length, item_position, mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  sha3 swap3 swap2 swap1      // [ cd_ptr, mem_ptr, prev_hash, item_hash, index, array_length, array_length_offset ]
+}

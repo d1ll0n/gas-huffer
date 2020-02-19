@@ -1,0 +1,43 @@
+#include "./utils.huff"
+#include "./loops.huff"
+#include "./skip-helpers.huff"
+#include "./start.huff"
+#include "./main.huff"
+
+
+#define macro LOOP_UNTIL_CONDITION = takes(6) returns(7) {
+  // [ mem_ptr, prev_hash, index, array_length, array_length_offset ]
+  swap2 0x01 add swap2  // [ mem_ptr, prev_hash, index+1, array_length, array_length_offset ]
+  dup4 dup4 gt          // [ array_length > index + 1, mem_ptr, prev_hash, index+1, array_length, array_length_offset ]
+}
+
+#define macro LOOP_BODY = takes(5) returns(6) {
+  // [ mem_ptr, prev_hash, item_hash, index, array_length, array_length_offset ]
+  GET_NEXT_HEADER_META()          // [ cd_ptr, mem_ptr, prev_hash, item_hash, index, array_length, array_length_offset ]
+  DECODE_HEADER<err_bad_header>() // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  pop                             // [ mem_ptr, item_hash, index, array_length, array_length_offset ]
+}
+
+template <bad_number_label>
+#define macro FINISH_MAIN = takes(5) returns(0) {
+  // [ mem_ptr, prev_hash, index+1, array_length, array_length_offset ]
+  0x60 swap1 sub                                    // [ mem_ptr - 0x60, prev_hash, index+1, array_length, array_length_offset ]
+  mload blockhash eq iszero <bad_number_label> jumpi  // [ index+1, array_length, array_length_offset ]
+  pop swap1 pop                                     // [ array_length ]
+  0x60 mul 0x40 add 0x00 return
+}
+
+/**
+ * @title DECODE_MAIN
+ * @dev Decodes the bytes[] calldata into the header values we want.
+ * For the first item, we put the blockhash on the stack.
+ * Then for every other item, we put the new header's blockhash on the stack
+ * and compare the header's parentHash to the previous blockhash.
+*/
+#define macro MAIN_LOOP = takes(0) returns(0) {
+  START()
+  UNTIL<LOOP_UNTIL_CONDITION, LOOP_BODY>()
+  FINISH_MAIN<err_bad_number>()
+  err_bad_header: 0xaa 0x00 mstore 0x20 0x00 return
+  err_bad_number: 0xbb 0x00 mstore 0x20 0x00 return
+}

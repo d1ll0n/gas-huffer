@@ -1,0 +1,22 @@
+template <jump_label>
+#define macro GOTO = takes(0) returns(0) {
+  <jump_label> jump
+}
+
+template <condition, jump_label>
+#define macro GOTO_IF = takes(0) returns(0) {
+  <condition> <jump_label> jumpi
+}
+
+template <body, begin>
+#define macro UNTIL_BODY = takes(0) returns(0) {
+  <body> GOTO<begin>()
+}
+
+template <condition, loop_body>
+#define macro UNTIL = takes(0) returns(0) {
+  start_loop:
+    GOTO_IF<condition, end_loop>()
+    UNTIL_BODY<loop_body, start_loop>()
+  end_loop:
+}

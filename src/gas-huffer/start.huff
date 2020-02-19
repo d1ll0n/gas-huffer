@@ -1,0 +1,38 @@
+#include "./utils.huff"
+
+#define macro GET_FIRST_HEADER_META = takes(3) returns(5) {
+  // [index, array_length, array_length_offset]
+  0x20 0x00 mstore            // [ index, array_length, array_length_offset ] 
+  dup2 0x20 mstore            // [ index, array_length, array_length_offset ] 
+  dup1 0x20 mul               // [ 0x20 * index, index, array_length, array_length_offset ]
+  dup1 dup5 add calldataload add dup4 add // [ item_length_position, index, array_length, array_length_offset ]
+  dup1 calldataload           // [ item_length, item_length_position, index, array_length, array_length_offset ]
+  swap1 0x20 add              // [ item_position, item_length, index, array_length, array_length_offset ]
+  swap1                       // [ item_length, item_position, index, array_length, array_length_offset ]
+  dup4 0x60 mul 0x40 add      // [ end_return_buffer, item_length, item_position, index, array_length, array_length_offset ]
+  dup2 dup4 dup3 calldatacopy // [ end_return_buffer, item_length, item_position, index, array_length, array_length_offset ]
+  sha3                        // [ item_hash, item_offset, index, array_length, array_length_offset ]
+  swap1                       // [ item_offset, item_hash, index, array_length, array_length_offset ]
+  0x40 swap1                  // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+}
+
+/**
+ * @title DECODE_FIRST_HEADER
+ * @dev Decodes the first block header, skipping the parentHash verification.
+*/
+#define macro DECODE_FIRST_HEADER = takes(2) returns(2) {
+  SKIP_LENGTH_LENGTH()                                  // [ cd_ptr, mem_ptr ]
+  SKIP_CONSTANT_FIELDS()                                // [ cd_ptr, mem_ptr ]
+  SKIP_DYNAMIC_FIELD<after_skip>() after_skip:          // [ cd_ptr, mem_ptr ]
+  STORE_NEXT_BYTES<after_get_num>() after_get_num:      // [ cd_ptr, mem_ptr ]
+  STORE_NEXT_BYTES<after_get_limit>() after_get_limit:  // [ cd_ptr, mem_ptr ]
+  STORE_NEXT_BYTES<after_get_used>() after_get_used:    // [ cd_ptr, mem_ptr ]
+}
+
+#define macro START = takes(0) returns(5) {
+  0x00 calldataload           // [ array_length_offset ]
+  dup1 calldataload           // [ array_length, array_length_offset ]
+  0x01                        // [ index, array_length, array_length_offset ]
+  GET_FIRST_HEADER_META()     // [ cd_ptr, mem_ptr, item_hash, index, array_length, array_length_offset ]
+  DECODE_FIRST_HEADER() pop   // [ mem_ptr, item_hash, index, array_length, array_length_offset ]
+}
